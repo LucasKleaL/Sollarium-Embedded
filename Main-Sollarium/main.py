@@ -33,9 +33,9 @@ def sendPost(data):
     gc.collect()
     
 def sendCsvSd(data, url):
-    print("fileData:"+data)
+    print("fileData:"+str(data))
     file=open("/sd/SollariumTest{}.csv".format(url), "ba")
-    file.write("Temperatura: 34; Umidade: 20;")
+    file.write(str(data))
     file.write("\n")
     file.close()
     gc.collect()
@@ -45,6 +45,11 @@ sd = sdcard.SDCard(machine.SPI(1, sck=machine.Pin(18), mosi=machine.Pin(23), mis
 os.mount(sd, "/sd")
 os.listdir("/sd")
 sdDir=os.listdir("/sd")
+file=open("/sd/SollariumTest{}.csv".format(len(sdDir)), "ba")
+header = "Temperature; Humidity; Luminosity; Pressure; AcelX; AcelY; AcelZ; GyroX; GyroY; GyroZ; MagX; MagY; MagZ; Battery;"
+file.write(str(header))
+file.write("\n")
+file.close()
 
 #luminosity sensor initialization
 adc34=ADC(Pin(34))
@@ -91,20 +96,20 @@ while True:
     mz=m[2]
     battery=adc35.read()
     
-    lineData = "Temperature: "+str(temperature)+"; "
-    #lineData += "Humidity: "+str(humidity)+"; "
-    #lineData += "Luminosity: "+str(luminosity)+"; "
-    #lineData += "Pressure: "+str(pressure)+"; "
-    #lineData += "AcelX: "+str(a[0])+"; "
-    #lineData += "AcelY: "+str(a[1])+"; "
-    #lineData += "AcelZ: "+str(a[2])+"; "
-    #lineData += "GyroX: "+str(g[0])+"; "
-    #lineData += "GyroY: "+str(g[1])+"; "
-    #lineData += "GyroZ: "+str(g[2])+"; "
-    #lineData += "MagX: "+str(m[0])+"; "
-    #lineData += "MagY: "+str(m[1])+"; "
-    #lineData += "MagZ: "+str(m[2])+"; "
-    #lineData += "Battery: "+str(battery)+"; "
+    lineData = ("{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};"
+                "{};").format(str(temperature), str(humidity), str(luminosity), str(pressure), str(ax), str(ay), str(az), str(gx), str(gy), str(gz), str(mx), str(my), str(mz), str(battery))
     
     jsonData = {
         "t":temperature, #temperature sht20
