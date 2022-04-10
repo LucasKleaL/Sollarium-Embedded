@@ -1,4 +1,4 @@
-import machine, sdcard, os, CCS811, time, urequests, gc
+import machine, sdcard, os, CCS811, time, urequests, gc, mcp23017, json
 from machine import SoftI2C, Pin
 from machine import ADC
 from bmp280 import *
@@ -30,15 +30,29 @@ def sendPost(data):
     print("sendPost"+str(data))
     print("HTTP Status: " + str(request.status_code))
     print("HTTP Response: " + str(str(request.content)))
+    #led
+    if (request.status_code == 200): #successful http post
+        mcpIO.output(3, 1)
+        time.sleep(1)
+        mcpIO.output(3, 0)
+    else: #error exception http post
+        mcpIO.output(4, 1)
+        time.sleep(1)
+        mcpIO.output(4, 0)
     gc.collect()
     
 def sendCsvSd(data, url):
-    print("fileData:"+str(data))
     file=open("/sd/SollariumTest{}.csv".format(url), "ba")
     file.write(str(data))
     file.write("\n")
     file.close()
     gc.collect()
+    
+def setBatteryLevel(battery):
+    maxValue = 2500
+    batteryPercent = (maxValue - battery) * 100 / maxValue
+    batteryLevel = 100.0 - batteryPercent
+    return round(batteryLevel)
     
 #sd card initialization
 sd = sdcard.SDCard(machine.SPI(1, sck=machine.Pin(18), mosi=machine.Pin(23), miso=machine.Pin(19)), machine.Pin(15))
@@ -46,7 +60,7 @@ os.mount(sd, "/sd")
 os.listdir("/sd")
 sdDir=os.listdir("/sd")
 file=open("/sd/SollariumTest{}.csv".format(len(sdDir)), "ba")
-header = "Temperature; Humidity; Luminosity; Pressure; AcelX; AcelY; AcelZ; GyroX; GyroY; GyroZ; MagX; MagY; MagZ; Battery;"
+header = "Temperature; Humidity; Luminosity; Pressure; AcelX; AcelY; AcelZ; GyroX; GyroY; GyroZ; MagX; MagY; MagZ; Battery; BatteryLevel;"
 file.write(str(header))
 file.write("\n")
 file.close()
@@ -71,16 +85,18 @@ bmp280.use_case(BMP280_CASE_WEATHER)
 bmp280.oversample(BMP280_OS_HIGH)
 #mpu9250s initialization
 mpu9250s=MPU9250(i2c)
+#mcp23017 (leds) initialization
+mcpIO = mcp23017.MCP23017()
 
 while True:
-    temperature=sht20_temperature()
-    humidity=sht20_humidity()
+    temperature=round(sht20_temperature(), 2)
+    humidity=round(sht20_humidity(), 2)
     luminosity=adc34.read()
     if sCCS811.data_ready():
         co2=sCCS811.eCO2
     bmp280.normal_measure()
-    pressure=bmp280.pressure
-    bmp280temp=bmp280.temperature
+    pressure=round(bmp280.pressure)
+    bmp280temp=round(bmp280.temperature, 2)
     bmp280.sleep()
     a=mpu9250s.acceleration #acelerometer
     g=mpu9250s.gyro #gyroscope
@@ -95,6 +111,10 @@ while True:
     my=m[1]
     mz=m[2]
     battery=adc35.read()
+    batteryLevel=setBatteryLevel(battery)
+    compactA = round(ax, 2), round(ay, 2), round(az, 2)
+    compactG = round(gx, 2), round(gy, 2), round(gz, 2)
+    compactM = round(mx, 2), round(my, 2), round(mz, 2)
     
     lineData = ("{};"
                 "{};"
@@ -109,20 +129,36 @@ while True:
                 "{};"
                 "{};"
                 "{};"
-                "{};").format(str(temperature), str(humidity), str(luminosity), str(pressure), str(ax), str(ay), str(az), str(gx), str(gy), str(gz), str(mx), str(my), str(mz), str(battery))
+                "{};"
+                "{};").format(str(temperature), str(humidity), str(luminosity), str(pressure), str(ax), str(ay), str(az), str(gx), str(gy), str(gz), str(mx), str(my), str(mz), str(battery), str(batteryLevel))
     
     jsonData = {
-        "t":temperature, #temperature sht20
-        "h":humidity, #humidity sht20
-        "l":luminosity,
-        "p":pressure, #pressure bmt280
-        "a":a, #acelerometer (x, y, z) mpu9250
-        "g":g, #gyroscope (x, y, z) mpu9250
-        "m":m, #magnetometer (x, y, z) mpu9250
-        "b":battery, #battery level sensor
+        "t":temperature,"h":round(humidity),"p":pressure,"a":compactA,"g":compactG,"m":compactM,"bl":batteryLevel,
+        #temperature sht20, humidity sht20 #pressure bmt280
+        #"l":luminosity,
+        #"ax": round(a[0], 2),
+        #"ay": round(a[1], 2),
+        #"az": round(a[2], 2),
+        #"gx": round(g[0], 2),
+        #"gy": round(g[1], 2),
+        #"gz": round(g[2], 2),
+        #"mx": round(m[0], 2),
+        #"my": round(m[1], 2),
+        #"mz": round(m[2], 2),
+        #"b":battery, #battery raw sensor value
+        #battery level percent
     }
     
-    sendPost(jsonData)
+    #dumpJson = json.dumps(jsonData, separators=(",", ":"))
+    #print("dumpJson {}".format(dumpJson))
+    #compactJsonData = json.loads(json.dumps(jsonData, separators=(",", ":")))
+    
+    strJsonData = str(jsonData).replace(" ","")
+    dumpJson = json.dumps(strJsonData)
+    compactJsonData = json.loads(dumpJson)
+    
+    sendPost(compactJsonData)
+    print("compactJsonData {}".format(compactJsonData))
     sendCsvSd(lineData, len(sdDir))
     time.sleep(4)
     
